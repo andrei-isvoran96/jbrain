@@ -1,6 +1,6 @@
 # JBrain - Personal Knowledge Assistant
 
-A Spring Boot 4.x application that indexes your local Markdown and Text files into a vector store and allows you to query them using natural language. Powered by Spring AI and Ollama for local LLM support.
+A Spring Boot application that indexes your local Markdown and Text files into a vector store and allows you to query them using natural language. Powered by Spring AI and Ollama for local LLM support.
 
 ![JBrain UI](https://img.shields.io/badge/UI-Modern%20Web%20Interface-6366f1)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.2-brightgreen)

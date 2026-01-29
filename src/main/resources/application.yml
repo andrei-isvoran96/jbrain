@@ -1,0 +1,47 @@
+spring:
+  application:
+    name: jbrain
+
+  # Ollama Configuration
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        model: qwen2:1.5b
+        options:
+          temperature: 0.7
+          num-predict: 512      # Reduced from 1024 - shorter responses = faster
+          num-ctx: 4096         # Context window size
+      embedding:
+        model: nomic-embed-text
+        options:
+          num-batch: 512
+
+# JBrain Knowledge Base Configuration
+jbrain:
+  knowledge:
+    # Directory to scan for documents (Markdown and Text files)
+    documents-path: ${user.home}/knowledge
+    # Vector store persistence file
+    vector-store-path: ${user.home}/.jbrain/vector-store.json
+    # Chunk size for text splitting
+    chunk-size: 1000
+    # Chunk overlap
+    chunk-overlap: 200
+    # Number of similar documents to retrieve for RAG (fewer = faster responses)
+    similarity-top-k: 1
+    # File extensions to index
+    file-extensions:
+      - .md
+      - .txt
+      - .markdown
+
+# Server Configuration
+server:
+  port: 8080
+
+# Logging
+logging:
+  level:
+    io.github.aisvoran.jbrain: DEBUG
+    org.springframework.ai: INFO

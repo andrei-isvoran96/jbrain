@@ -10,6 +10,8 @@ import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
 
+import reactor.core.publisher.Flux;
+
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -120,6 +122,42 @@ public class RagService {
                 .build();
         
         return vectorStore.similaritySearch(searchRequest);
+    }
+
+    /**
+     * Streaming version of ask() that returns tokens as they are generated.
+     * Used for CLI and real-time UI responses.
+     */
+    public Flux<String> askStream(String question) {
+        log.info("Processing streaming question: {}", question);
+
+        // Perform similarity search
+        SearchRequest searchRequest = SearchRequest.builder()
+                .query(question)
+                .topK(properties.similarityTopK())
+                .build();
+
+        List<Document> relevantDocs = vectorStore.similaritySearch(searchRequest);
+        
+        log.debug("Found {} relevant documents for streaming", relevantDocs.size());
+
+        if (relevantDocs.isEmpty()) {
+            return Flux.just("I couldn't find any relevant information in your knowledge base to answer this question. " +
+                    "Please make sure you have documents indexed, or try rephrasing your question.");
+        }
+
+        // Build context from retrieved documents
+        String context = buildContext(relevantDocs);
+        
+        // Create the system prompt with context
+        String systemPrompt = String.format(SYSTEM_PROMPT_TEMPLATE, context);
+
+        // Stream the response using the LLM
+        return chatClient.prompt()
+                .system(systemPrompt)
+                .user(question)
+                .stream()
+                .content();
     }
 
     public record RagResponse(

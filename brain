@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+#
+# brain - CLI tool for querying JBrain knowledge base
+#
+# Usage:
+#   brain what are the best practices for spring boot
+#   brain "what is dependency injection?"
+#   /brain how do I configure logging
+#
+# The script streams the response from JBrain as it's generated.
+#
+
+set -euo pipefail
+
+# Configuration
+JBRAIN_HOST="${JBRAIN_HOST:-localhost}"
+JBRAIN_PORT="${JBRAIN_PORT:-8080}"
+JBRAIN_URL="http://${JBRAIN_HOST}:${JBRAIN_PORT}/api/ask/stream"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+BOLD='\033[1m'
+
+# Show usage
+usage() {
+    echo -e "${BOLD}brain${NC} - Query your JBrain knowledge base"
+    echo ""
+    echo -e "${BOLD}Usage:${NC}"
+    echo "  brain <question>        Ask a question"
+    echo "  brain --help            Show this help"
+    echo ""
+    echo -e "${BOLD}Examples:${NC}"
+    echo "  brain what are best practices for Spring Boot"
+    echo "  brain \"how do I configure logging?\""
+    echo ""
+    echo -e "${BOLD}Environment Variables:${NC}"
+    echo "  JBRAIN_HOST    Server host (default: localhost)"
+    echo "  JBRAIN_PORT    Server port (default: 8080)"
+    exit 0
+}
+
+# Check if help is requested
+if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
+    usage
+fi
+
+# Check if a question was provided
+if [[ $# -eq 0 ]]; then
+    echo -e "${RED}Error:${NC} No question provided"
+    echo ""
+    usage
+fi
+
+# Combine all arguments into the question
+question="$*"
+
+# Strip leading slash if present (for /brain usage)
+question="${question#/}"
+
+# URL encode the question
+encoded_question=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$question'''))")
+
+# Check if server is reachable
+if ! curl -s --connect-timeout 2 "http://${JBRAIN_HOST}:${JBRAIN_PORT}/api/health" > /dev/null 2>&1; then
+    echo -e "${RED}Error:${NC} Cannot connect to JBrain server at ${JBRAIN_HOST}:${JBRAIN_PORT}"
+    echo -e "Make sure the server is running: ${YELLOW}./gradlew bootRun${NC}"
+    exit 1
+fi
+
+# Show thinking indicator
+echo -e "${BLUE}Thinking...${NC}"
+
+# Move cursor up and clear line when we get the first response
+first_chunk=true
+
+# Stream the response using curl
+# SSE format sends "data: <content>" lines, we extract just the content
+curl -sN "${JBRAIN_URL}?q=${encoded_question}" 2>/dev/null | while IFS= read -r line; do
+    # SSE sends lines in format: "data:content" or just content
+    # Skip empty lines and event markers
+    if [[ -z "$line" ]] || [[ "$line" == "event:"* ]] || [[ "$line" == "id:"* ]]; then
+        continue
+    fi
+    
+    # Extract content after "data:" prefix if present
+    if [[ "$line" == "data:"* ]]; then
+        content="${line#data:}"
+    else
+        content="$line"
+    fi
+    
+    # Clear the "Thinking..." message on first chunk
+    if $first_chunk; then
+        # Move up one line and clear it
+        echo -ne "\033[1A\033[2K"
+        first_chunk=false
+    fi
+    
+    # Print the content without newline to stream continuously
+    echo -n "$content"
+done
+
+# Add a newline at the end
+echo ""

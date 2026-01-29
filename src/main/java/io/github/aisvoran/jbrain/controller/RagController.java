@@ -8,8 +8,10 @@ import io.github.aisvoran.jbrain.service.RagService.RagResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Flux;
 
 import java.util.List;
 import java.util.Map;
@@ -54,6 +56,22 @@ public class RagController {
         log.info("Received question (GET): {}", question);
         RagResponse response = ragService.ask(question);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Streaming endpoint that returns tokens as Server-Sent Events.
+     * Used by the CLI tool for real-time response display.
+     * 
+     * GET /api/ask/stream?q={question}
+     */
+    @GetMapping(value = "/ask/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> askStream(@RequestParam("q") String question) {
+        if (question == null || question.isBlank()) {
+            return Flux.just("Error: Question cannot be empty");
+        }
+
+        log.info("Received streaming question: {}", question);
+        return ragService.askStream(question);
     }
 
     @GetMapping("/search")

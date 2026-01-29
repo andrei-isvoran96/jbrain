@@ -8,8 +8,11 @@ A Spring Boot application that indexes your local Markdown and Text files into a
 
 ![Presentation.gif](Presentation.gif)
 
+![cli.gif](cli.gif)
+
 ## Features
 
+- **CLI Tool**: Query your knowledge base from the terminal with `brain <question>` - streaming responses
 - **Beautiful Web UI**: Modern, dark-themed chat interface for asking questions
 - **Document Ingestion**: Automatically scans and indexes `.md`, `.txt`, and `.markdown` files
 - **Vector Store Persistence**: Uses `SimpleVectorStore` with JSON file persistence
@@ -91,10 +94,13 @@ The application automatically detects new files and indexes them.
 
 ### 4. Query Your Knowledge Base
 
-Use the web interface to ask questions, or use the REST API:
+Use the CLI tool, web interface, or REST API:
 
 ```bash
-# Ask a question
+# Using the CLI (recommended - streams response)
+./brain what are the key features of Spring Boot
+
+# Or use the REST API
 curl -X POST http://localhost:8080/api/ask \
   -H "Content-Type: application/json" \
   -d '{"question": "What are the key features of Spring Boot?"}'
@@ -122,6 +128,78 @@ The interface includes:
 - Chat history showing your questions and JBrain's responses
 - Source documents cited for each answer
 - Statistics panel (click the chart icon in the bottom right)
+
+## CLI Tool
+
+JBrain includes a `brain` command-line tool for querying your knowledge base directly from the terminal with streaming responses.
+
+### Usage
+
+```bash
+# Ask a question (words are joined automatically)
+./brain what are the best practices for spring boot
+
+# Or use quotes for complex questions
+./brain "how do I configure logging?"
+
+# Works with /brain prefix too (for shell aliases)
+/brain what is dependency injection
+```
+
+### Global Installation
+
+To use `brain` from anywhere in your terminal (like `curl` or `git`):
+
+**Option 1: Symlink (Recommended)**
+
+Run this from the jbrain project directory:
+
+```bash
+sudo ln -s "$(pwd)/brain" /usr/local/bin/brain
+```
+
+**Option 2: Add to PATH**
+
+Add this line to your shell config (`~/.zshrc` or `~/.bashrc`):
+
+```bash
+export PATH="$PATH:/path/to/jbrain"
+```
+
+Then reload your shell:
+
+```bash
+source ~/.zshrc  # or source ~/.bashrc
+```
+
+After installation, use it from any directory:
+
+```bash
+brain what are the key features of Spring Boot
+brain how do I configure logging
+```
+
+### Configuration
+
+The CLI uses environment variables for configuration:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JBRAIN_HOST` | `localhost` | JBrain server host |
+| `JBRAIN_PORT` | `8080` | JBrain server port |
+
+Example with custom server:
+
+```bash
+JBRAIN_HOST=192.168.1.100 brain what is RAG
+```
+
+### How It Works
+
+1. The CLI sends your question to the `/api/ask/stream` endpoint
+2. The server streams tokens back as Server-Sent Events (SSE)
+3. Tokens are displayed in real-time as they're generated
+4. The response streams directly to your terminal
 
 ## API Reference
 
@@ -165,6 +243,17 @@ curl -X POST http://localhost:8080/api/ask \
 **Example**:
 ```bash
 curl "http://localhost:8080/api/ask?q=How%20do%20I%20configure%20profiles?"
+```
+
+### Ask a Question (Streaming)
+
+**Endpoint**: `GET /api/ask/stream?q={question}`
+
+Streams the response as Server-Sent Events (SSE). Used by the CLI tool for real-time output.
+
+**Example**:
+```bash
+curl -N "http://localhost:8080/api/ask/stream?q=What%20is%20dependency%20injection"
 ```
 
 ### Search Without LLM

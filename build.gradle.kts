@@ -41,6 +41,9 @@ dependencies {
 	// For file watching
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
 	
+	// WebFlux for reactive streaming support
+	implementation("org.springframework.boot:spring-boot-starter-webflux")
+	
 	// Lombok for cleaner code (optional but useful)
 	compileOnly("org.projectlombok:lombok")
 	annotationProcessor("org.projectlombok:lombok")

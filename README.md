@@ -373,6 +373,69 @@ spring:
 java -jar build/libs/jbrain-0.0.1-SNAPSHOT.jar
 ```
 
+## Docker Deployment
+
+Run JBrain with Docker Compose (includes Ollama):
+
+### Quick Start with Docker
+
+```bash
+# 1. Add your documents to the knowledge folder
+cp ~/your-notes/*.md ./knowledge/
+
+# 2. Start everything (first run will download models ~2GB)
+docker compose up -d
+
+# 3. Wait for models to download (check logs)
+docker compose logs -f ollama-init
+
+# 4. Access the UI
+open http://localhost:8080
+```
+
+### Docker Commands
+
+```bash
+# Start services
+docker compose up -d
+
+# View logs
+docker compose logs -f jbrain
+
+# Stop services
+docker compose down
+
+# Rebuild after code changes
+docker compose build --no-cache jbrain
+docker compose up -d
+
+# Remove everything (including volumes)
+docker compose down -v
+```
+
+### GPU Support (NVIDIA)
+
+For faster inference, uncomment the GPU section in `docker-compose.yml`:
+
+```yaml
+deploy:
+  resources:
+    reservations:
+      devices:
+        - driver: nvidia
+          count: all
+          capabilities: [gpu]
+```
+
+### Docker Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SPRING_AI_OLLAMA_CHAT_MODEL` | `llama3.2` | Chat model to use |
+| `SPRING_AI_OLLAMA_EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model |
+| `JBRAIN_KNOWLEDGE_SIMILARITY_TOP_K` | `3` | Documents to retrieve |
+| `JAVA_OPTS` | `-Xmx512m` | JVM memory settings |
+
 ## Tech Stack
 
 - **Spring Boot 4.0.2** - Application framework
@@ -380,6 +443,7 @@ java -jar build/libs/jbrain-0.0.1-SNAPSHOT.jar
 - **Ollama** - Local LLM runtime
 - **SimpleVectorStore** - In-memory vector storage with JSON persistence
 - **Java 25** - Runtime
+- **Docker** - Containerization
 
 ## License
 

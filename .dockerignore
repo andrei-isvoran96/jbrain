@@ -1,0 +1,35 @@
+# Build outputs
+build/
+.gradle/
+out/
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Documentation (not needed in container)
+*.md
+!README.md
+
+# Local config
+*.local.*
+application-local.yml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+src/test/
+
+# Docker files (avoid infinite loop)
+Dockerfile*
+docker-compose*.yml
+.dockerignore

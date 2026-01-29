@@ -1,0 +1,94 @@
+services:
+  # JBrain Application
+  jbrain:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jbrain
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_AI_OLLAMA_BASE_URL=http://ollama:11434
+      - SPRING_AI_OLLAMA_CHAT_MODEL=llama3.2
+      - SPRING_AI_OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+      - JBRAIN_KNOWLEDGE_DOCUMENTS_PATH=/data/knowledge
+      - JBRAIN_KNOWLEDGE_VECTOR_STORE_PATH=/data/vectorstore/vector-store.json
+      - JBRAIN_KNOWLEDGE_SIMILARITY_TOP_K=3
+      - JAVA_OPTS=-Xmx512m
+    volumes:
+      # Mount your local knowledge directory
+      - ./knowledge:/data/knowledge:ro
+      # Persist vector store
+      - jbrain-vectorstore:/data/vectorstore
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - jbrain-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Ollama LLM Server
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      # Persist downloaded models
+      - ollama-models:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    restart: unless-stopped
+    networks:
+      - jbrain-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    # Uncomment for GPU support (NVIDIA)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # Model initialization (runs once to pull models)
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    networks:
+      - jbrain-network
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Pulling required models..."
+        ollama pull llama3.2
+        ollama pull nomic-embed-text
+        echo "Models ready!"
+    environment:
+      - OLLAMA_HOST=ollama:11434
+    restart: "no"
+
+volumes:
+  ollama-models:
+    name: jbrain-ollama-models
+  jbrain-vectorstore:
+    name: jbrain-vectorstore
+
+networks:
+  jbrain-network:
+    name: jbrain-network
+    driver: bridge

@@ -6,6 +6,8 @@ A Spring Boot 4.x application that indexes your local Markdown and Text files in
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.2-brightgreen)
 ![Spring AI](https://img.shields.io/badge/Spring%20AI-2.0.0--M1-blue)
 
+![Demo.gif](Demo.gif)
+
 ## Features
 
 - **Beautiful Web UI**: Modern, dark-themed chat interface for asking questions

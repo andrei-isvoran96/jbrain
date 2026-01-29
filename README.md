@@ -142,8 +142,12 @@ JBrain includes a `brain` command-line tool for querying your knowledge base dir
 # Or use quotes for complex questions
 ./brain "how do I configure logging?"
 
-# Works with /brain prefix too (for shell aliases)
-/brain what is dependency injection
+# Use a specific model for complex questions
+./brain --model llama3.1:70b "explain quantum computing in detail"
+./brain -m mistral what is dependency injection
+
+# List available models
+./brain --models
 ```
 
 ### Global Installation
@@ -193,6 +197,27 @@ Example with custom server:
 ```bash
 JBRAIN_HOST=192.168.1.100 brain what is RAG
 ```
+
+### Model Switching
+
+Switch between different Ollama models on the fly for different use cases:
+
+```bash
+# List all available models
+brain --models
+
+# Use a larger model for complex questions
+brain --model llama3.1:70b "explain the theory of relativity"
+
+# Use a faster model for quick queries
+brain -m qwen2:1.5b "what is a variable"
+
+```
+
+**Tips:**
+- Larger models (7B+) are better for complex reasoning but slower
+- Smaller models (1.5B-3B) are faster for simple queries
+- Use `brain --models` to see available models and their sizes
 
 ### How It Works
 
@@ -247,13 +272,53 @@ curl "http://localhost:8080/api/ask?q=How%20do%20I%20configure%20profiles?"
 
 ### Ask a Question (Streaming)
 
-**Endpoint**: `GET /api/ask/stream?q={question}`
+**Endpoint**: `GET /api/ask/stream?q={question}&model={model}`
 
 Streams the response as Server-Sent Events (SSE). Used by the CLI tool for real-time output.
 
+**Parameters**:
+- `q` (required): The question to ask
+- `model` (optional): Override the default model (e.g., `llama3.2`, `mistral`, `qwen2:7b`)
+
 **Example**:
 ```bash
+# Use default model
 curl -N "http://localhost:8080/api/ask/stream?q=What%20is%20dependency%20injection"
+
+# Use a specific model
+curl -N "http://localhost:8080/api/ask/stream?q=Explain%20quantum%20computing&model=llama3.1:70b"
+```
+
+### List Available Models
+
+**Endpoint**: `GET /api/models`
+
+Returns the list of available Ollama models and the current default model.
+
+**Example**:
+```bash
+curl http://localhost:8080/api/models
+```
+
+**Response**:
+```json
+{
+  "defaultModel": "qwen2:1.5b",
+  "available": [
+    {
+      "name": "llama3.2:latest",
+      "family": "llama",
+      "parameterSize": "3.2B",
+      "sizeBytes": 2019393189
+    },
+    {
+      "name": "qwen2:1.5b",
+      "family": "qwen2",
+      "parameterSize": "1.5B",
+      "sizeBytes": 934954752
+    }
+  ]
+}
 ```
 
 ### Search Without LLM

@@ -5,7 +5,8 @@
 # Usage:
 #   brain what are the best practices for spring boot
 #   brain "what is dependency injection?"
-#   /brain how do I configure logging
+#   brain --model llama3.2 "complex question requiring larger model"
+#   brain --models  # List available models
 #
 # The script streams the response from JBrain as it's generated.
 #
@@ -15,31 +16,89 @@ set -euo pipefail
 # Configuration
 JBRAIN_HOST="${JBRAIN_HOST:-localhost}"
 JBRAIN_PORT="${JBRAIN_PORT:-8080}"
-JBRAIN_URL="http://${JBRAIN_HOST}:${JBRAIN_PORT}/api/ask/stream"
+JBRAIN_BASE_URL="http://${JBRAIN_HOST}:${JBRAIN_PORT}"
+JBRAIN_URL="${JBRAIN_BASE_URL}/api/ask/stream"
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 BOLD='\033[1m'
+
+# Default model (empty means use server default)
+MODEL=""
 
 # Show usage
 usage() {
     echo -e "${BOLD}brain${NC} - Query your JBrain knowledge base"
     echo ""
     echo -e "${BOLD}Usage:${NC}"
-    echo "  brain <question>        Ask a question"
-    echo "  brain --help            Show this help"
+    echo "  brain <question>                   Ask a question"
+    echo "  brain --model <model> <question>   Ask using a specific model"
+    echo "  brain --models                     List available models"
+    echo "  brain --help                       Show this help"
+    echo ""
+    echo -e "${BOLD}Options:${NC}"
+    echo "  -m, --model <name>   Use a specific Ollama model (e.g., llama3.2, mistral, qwen2:7b)"
+    echo "  --models             List all available models from Ollama"
     echo ""
     echo -e "${BOLD}Examples:${NC}"
     echo "  brain what are best practices for Spring Boot"
     echo "  brain \"how do I configure logging?\""
+    echo "  brain --model llama3.1:70b \"explain quantum computing\""
+    echo "  brain -m mistral what is dependency injection"
     echo ""
     echo -e "${BOLD}Environment Variables:${NC}"
     echo "  JBRAIN_HOST    Server host (default: localhost)"
     echo "  JBRAIN_PORT    Server port (default: 8080)"
+    exit 0
+}
+
+# List available models
+list_models() {
+    if ! curl -s --connect-timeout 2 "${JBRAIN_BASE_URL}/api/health" > /dev/null 2>&1; then
+        echo -e "${RED}Error:${NC} Cannot connect to JBrain server at ${JBRAIN_HOST}:${JBRAIN_PORT}"
+        echo -e "Make sure the server is running: ${YELLOW}./gradlew bootRun${NC}"
+        exit 1
+    fi
+
+    echo -e "${BOLD}Available Models:${NC}"
+    echo ""
+    
+    response=$(curl -s "${JBRAIN_BASE_URL}/api/models")
+    default_model=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('defaultModel', 'unknown'))")
+    
+    echo -e "  ${CYAN}Default:${NC} ${default_model}"
+    echo ""
+    echo -e "  ${CYAN}Available:${NC}"
+    
+    echo "$response" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for m in data.get('available', []):
+    name = m.get('name', 'unknown')
+    family = m.get('family', '')
+    size = m.get('parameterSize', '')
+    size_bytes = m.get('sizeBytes', 0)
+    size_gb = size_bytes / (1024**3) if size_bytes else 0
+    
+    info = []
+    if family:
+        info.append(family)
+    if size:
+        info.append(size)
+    if size_gb > 0:
+        info.append(f'{size_gb:.1f}GB')
+    
+    info_str = f' ({', '.join(info)})' if info else ''
+    default_marker = ' ← default' if name == data.get('defaultModel') else ''
+    print(f'    • {name}{info_str}{default_marker}')
+"
+    echo ""
+    echo -e "  ${CYAN}Usage:${NC} brain --model <name> <question>"
     exit 0
 }
 
@@ -48,6 +107,32 @@ if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
     usage
 fi
 
+# Check if models list is requested
+if [[ "${1:-}" == "--models" ]]; then
+    list_models
+fi
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -m|--model)
+            if [[ -z "${2:-}" ]]; then
+                echo -e "${RED}Error:${NC} --model requires a model name"
+                exit 1
+            fi
+            MODEL="$2"
+            shift 2
+            ;;
+        -*)
+            echo -e "${RED}Error:${NC} Unknown option: $1"
+            usage
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
 # Check if a question was provided
 if [[ $# -eq 0 ]]; then
     echo -e "${RED}Error:${NC} No question provided"
@@ -55,7 +140,7 @@ if [[ $# -eq 0 ]]; then
     usage
 fi
 
-# Combine all arguments into the question
+# Combine remaining arguments into the question
 question="$*"
 
 # Strip leading slash if present (for /brain usage)
@@ -71,15 +156,22 @@ if ! curl -s --connect-timeout 2 "http://${JBRAIN_HOST}:${JBRAIN_PORT}/api/healt
     exit 1
 fi
 
-# Show thinking indicator
-echo -e "${BLUE}Thinking...${NC}"
+# Build the URL with optional model parameter
+url="${JBRAIN_URL}?q=${encoded_question}"
+if [[ -n "$MODEL" ]]; then
+    encoded_model=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$MODEL'''))")
+    url="${url}&model=${encoded_model}"
+    echo -e "${BLUE}Thinking with ${CYAN}${MODEL}${BLUE}...${NC}"
+else
+    echo -e "${BLUE}Thinking...${NC}"
+fi
 
 # Move cursor up and clear line when we get the first response
 first_chunk=true
 
 # Stream the response using curl
 # SSE format sends "data: <json>" lines, we parse the JSON to get content with whitespace
-curl -sN "${JBRAIN_URL}?q=${encoded_question}" 2>/dev/null | while IFS= read -r line; do
+curl -sN "${url}" 2>/dev/null | while IFS= read -r line; do
     # SSE sends lines in format: "data:{json}" or just content
     # Skip empty lines and event markers
     if [[ -z "$line" ]] || [[ "$line" == "event:"* ]] || [[ "$line" == "id:"* ]]; then

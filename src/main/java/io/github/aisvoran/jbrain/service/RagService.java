@@ -6,6 +6,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.document.Document;
+import org.springframework.ai.ollama.OllamaChatModel;
+import org.springframework.ai.ollama.api.OllamaChatOptions;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
@@ -41,7 +43,9 @@ public class RagService {
 
     private final VectorStore vectorStore;
     private final ChatClient chatClient;
+    private final OllamaChatModel ollamaChatModel;
     private final KnowledgeBaseProperties properties;
+    private final String defaultModel;
 
     public RagService(
             VectorStore vectorStore,
@@ -50,7 +54,14 @@ public class RagService {
     ) {
         this.vectorStore = vectorStore;
         this.chatClient = ChatClient.builder(chatModel).build();
+        this.ollamaChatModel = (OllamaChatModel) chatModel;
         this.properties = properties;
+        // Store the default model name from configuration
+        this.defaultModel = ollamaChatModel.getDefaultOptions().getModel();
+    }
+
+    public String getDefaultModel() {
+        return defaultModel;
     }
 
     public RagResponse ask(String question) {
@@ -129,7 +140,17 @@ public class RagService {
      * Used for CLI and real-time UI responses.
      */
     public Flux<String> askStream(String question) {
-        log.info("Processing streaming question: {}", question);
+        return askStream(question, null);
+    }
+
+    /**
+     * Streaming version of ask() with optional model override.
+     * @param question The question to ask
+     * @param model Optional model name to use (e.g., "llama3.2", "mistral", "qwen2:7b")
+     */
+    public Flux<String> askStream(String question, String model) {
+        String modelToUse = (model != null && !model.isBlank()) ? model : defaultModel;
+        log.info("Processing streaming question with model '{}': {}", modelToUse, question);
 
         // Perform similarity search
         SearchRequest searchRequest = SearchRequest.builder()
@@ -152,10 +173,16 @@ public class RagService {
         // Create the system prompt with context
         String systemPrompt = String.format(SYSTEM_PROMPT_TEMPLATE, context);
 
-        // Stream the response using the LLM
+        // Build chat options with the specified model
+        OllamaChatOptions options = OllamaChatOptions.builder()
+                .model(modelToUse)
+                .build();
+
+        // Stream the response using the LLM with model override
         return chatClient.prompt()
                 .system(systemPrompt)
                 .user(question)
+                .options(options)
                 .stream()
                 .content();
     }

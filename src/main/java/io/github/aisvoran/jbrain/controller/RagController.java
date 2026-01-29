@@ -8,6 +8,7 @@ import io.github.aisvoran.jbrain.service.RagService.RagResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
+import org.springframework.ai.ollama.api.OllamaApi;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
@@ -26,15 +27,18 @@ public class RagController {
     private final RagService ragService;
     private final DocumentIngestionService ingestionService;
     private final FileWatcherService fileWatcherService;
+    private final OllamaApi ollamaApi;
 
     public RagController(
             RagService ragService,
             DocumentIngestionService ingestionService,
-            FileWatcherService fileWatcherService
+            FileWatcherService fileWatcherService,
+            OllamaApi ollamaApi
     ) {
         this.ragService = ragService;
         this.ingestionService = ingestionService;
         this.fileWatcherService = fileWatcherService;
+        this.ollamaApi = ollamaApi;
     }
 
     @PostMapping("/ask")
@@ -64,18 +68,25 @@ public class RagController {
      * Used by the CLI tool and web UI for real-time response display.
      * Each token is wrapped in JSON to preserve whitespace.
      * 
-     * GET /api/ask/stream?q={question}
+     * GET /api/ask/stream?q={question}&model={model}
+     * 
+     * @param question The question to ask
+     * @param model Optional model override (e.g., "llama3.2", "mistral", "qwen2:7b")
      */
     @GetMapping(value = "/ask/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<StreamChunk>> askStream(@RequestParam("q") String question) {
+    public Flux<ServerSentEvent<StreamChunk>> askStream(
+            @RequestParam("q") String question,
+            @RequestParam(value = "model", required = false) String model) {
         if (question == null || question.isBlank()) {
             return Flux.just(ServerSentEvent.<StreamChunk>builder()
                     .data(new StreamChunk("Error: Question cannot be empty"))
                     .build());
         }
 
-        log.info("Received streaming question: {}", question);
-        return ragService.askStream(question)
+        String modelInfo = (model != null && !model.isBlank()) ? " with model '" + model + "'" : "";
+        log.info("Received streaming question{}: {}", modelInfo, question);
+        
+        return ragService.askStream(question, model)
                 .map(chunk -> ServerSentEvent.<StreamChunk>builder()
                         .data(new StreamChunk(chunk))
                         .build());
@@ -142,6 +153,37 @@ public class RagController {
         ));
     }
 
+    /**
+     * Lists available Ollama models.
+     * 
+     * GET /api/models
+     */
+    @GetMapping("/models")
+    public ResponseEntity<ModelsResponse> listModels() {
+        try {
+            var ollamaModels = ollamaApi.listModels();
+            List<ModelInfo> models = ollamaModels.models().stream()
+                    .map(m -> new ModelInfo(
+                            m.name(),
+                            m.details() != null ? m.details().family() : null,
+                            m.details() != null ? m.details().parameterSize() : null,
+                            m.size()
+                    ))
+                    .toList();
+            
+            return ResponseEntity.ok(new ModelsResponse(
+                    ragService.getDefaultModel(),
+                    models
+            ));
+        } catch (Exception e) {
+            log.error("Failed to list Ollama models", e);
+            return ResponseEntity.ok(new ModelsResponse(
+                    ragService.getDefaultModel(),
+                    List.of()
+            ));
+        }
+    }
+
     // Request/Response DTOs
 
     public record AskRequest(String question) {}
@@ -163,5 +205,17 @@ public class RagController {
             int indexedFileCount,
             String documentsPath,
             boolean fileWatcherActive
+    ) {}
+
+    public record ModelsResponse(
+            String defaultModel,
+            List<ModelInfo> available
+    ) {}
+
+    public record ModelInfo(
+            String name,
+            String family,
+            String parameterSize,
+            Long sizeBytes
     ) {}
 }

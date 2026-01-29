@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 
@@ -60,19 +61,27 @@ public class RagController {
 
     /**
      * Streaming endpoint that returns tokens as Server-Sent Events.
-     * Used by the CLI tool for real-time response display.
+     * Used by the CLI tool and web UI for real-time response display.
+     * Each token is wrapped in JSON to preserve whitespace.
      * 
      * GET /api/ask/stream?q={question}
      */
     @GetMapping(value = "/ask/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> askStream(@RequestParam("q") String question) {
+    public Flux<ServerSentEvent<StreamChunk>> askStream(@RequestParam("q") String question) {
         if (question == null || question.isBlank()) {
-            return Flux.just("Error: Question cannot be empty");
+            return Flux.just(ServerSentEvent.<StreamChunk>builder()
+                    .data(new StreamChunk("Error: Question cannot be empty"))
+                    .build());
         }
 
         log.info("Received streaming question: {}", question);
-        return ragService.askStream(question);
+        return ragService.askStream(question)
+                .map(chunk -> ServerSentEvent.<StreamChunk>builder()
+                        .data(new StreamChunk(chunk))
+                        .build());
     }
+
+    public record StreamChunk(String content) {}
 
     @GetMapping("/search")
     public ResponseEntity<SearchResponse> search(

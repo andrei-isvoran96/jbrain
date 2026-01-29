@@ -345,6 +345,11 @@
             40% { transform: scale(1); }
         }
 
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
         /* Input Area */
         .input-area {
             padding-top: 1.5rem;
@@ -837,32 +842,74 @@
             input.value = '';
             input.style.height = 'auto';
             
-            // Add loading indicator
-            const loadingId = addLoadingMessage();
+            // Add streaming assistant message (empty initially)
+            const messageId = addStreamingMessage();
             
             try {
-                const response = await fetch(`${API_BASE}/api/ask`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ question })
-                });
+                // Use streaming endpoint with SSE
+                const encodedQuestion = encodeURIComponent(question);
+                const eventSource = new EventSource(`${API_BASE}/api/ask/stream?q=${encodedQuestion}`);
                 
-                const data = await response.json();
+                let fullResponse = '';
+                const textElement = document.querySelector(`#${messageId} .message-text`);
                 
-                // Remove loading indicator
-                removeMessage(loadingId);
+                eventSource.onmessage = (event) => {
+                    try {
+                        // Parse JSON to get the content with preserved whitespace
+                        const data = JSON.parse(event.data);
+                        fullResponse += data.content;
+                    } catch (e) {
+                        // Fallback: use raw data if not JSON
+                        fullResponse += event.data;
+                    }
+                    // Update the message display with formatted content
+                    textElement.innerHTML = formatMessage(fullResponse);
+                    // Auto-scroll to bottom
+                    const container = document.getElementById('chatContainer');
+                    container.scrollTop = container.scrollHeight;
+                };
                 
-                // Add assistant message
-                addMessage('assistant', data.answer, data.sources);
+                eventSource.onerror = async (error) => {
+                    eventSource.close();
+                    
+                    if (fullResponse === '') {
+                        // No response received - show error
+                        textElement.innerHTML = formatMessage('Sorry, I encountered an error while processing your question. Please make sure the server is running and try again.');
+                    } else {
+                        // Fetch sources after streaming completes
+                        try {
+                            const searchResponse = await fetch(`${API_BASE}/api/search?q=${encodedQuestion}&topK=3`);
+                            const searchData = await searchResponse.json();
+                            if (searchData.results && searchData.results.length > 0) {
+                                const sources = searchData.results.map(r => ({
+                                    filename: r.filename,
+                                    path: r.path,
+                                    preview: r.content.substring(0, 200) + '...'
+                                }));
+                                addSourcesToMessage(messageId, sources);
+                            }
+                        } catch (e) {
+                            console.error('Failed to fetch sources:', e);
+                        }
+                    }
+                    
+                    // Mark streaming as complete
+                    finishStreamingMessage(messageId);
+                    
+                    isLoading = false;
+                    document.getElementById('sendBtn').disabled = false;
+                    input.focus();
+                };
                 
             } catch (error) {
-                removeMessage(loadingId);
-                addMessage('assistant', 'Sorry, I encountered an error while processing your question. Please make sure the server is running and try again.');
+                const textElement = document.querySelector(`#${messageId} .message-text`);
+                textElement.innerHTML = formatMessage('Sorry, I encountered an error while processing your question. Please make sure the server is running and try again.');
+                finishStreamingMessage(messageId);
+                
+                isLoading = false;
+                document.getElementById('sendBtn').disabled = false;
+                input.focus();
             }
-            
-            isLoading = false;
-            document.getElementById('sendBtn').disabled = false;
-            input.focus();
         }
 
         function addMessage(type, content, sources = []) {
@@ -944,6 +991,81 @@
             container.scrollTop = container.scrollHeight;
             
             return messageId;
+        }
+
+        function addStreamingMessage() {
+            const container = document.getElementById('chatContainer');
+            const messageId = 'msg-' + Date.now();
+            const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            const messageHtml = `
+                <div class="message assistant" id="${messageId}">
+                    <div class="message-avatar">🧠</div>
+                    <div class="message-content">
+                        <div class="message-header">
+                            <span class="message-name">JBrain</span>
+                            <span class="message-time">${time}</span>
+                            <span class="streaming-indicator" style="margin-left: 0.5rem; color: var(--primary); font-size: 0.75rem;">● streaming</span>
+                        </div>
+                        <div class="message-text"><span class="cursor" style="display: inline-block; width: 8px; height: 16px; background: var(--primary); animation: blink 1s infinite;"></span></div>
+                    </div>
+                </div>
+            `;
+            
+            container.insertAdjacentHTML('beforeend', messageHtml);
+            container.scrollTop = container.scrollHeight;
+            
+            return messageId;
+        }
+
+        function finishStreamingMessage(messageId) {
+            const message = document.getElementById(messageId);
+            if (message) {
+                // Remove streaming indicator
+                const indicator = message.querySelector('.streaming-indicator');
+                if (indicator) indicator.remove();
+                
+                // Remove cursor
+                const cursor = message.querySelector('.cursor');
+                if (cursor) cursor.remove();
+            }
+        }
+
+        function addSourcesToMessage(messageId, sources) {
+            const message = document.getElementById(messageId);
+            if (!message || !sources || sources.length === 0) return;
+            
+            const contentDiv = message.querySelector('.message-content');
+            const uniqueSources = [...new Map(sources.map(s => [s.filename, s])).values()];
+            
+            const sourcesHtml = `
+                <div class="sources">
+                    <div class="sources-header">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                        Sources
+                    </div>
+                    <div class="source-list">
+                        ${uniqueSources.map(s => `
+                            <button class="source-tag" onclick="showSource('${escapeHtml(s.filename)}', '${escapeHtml(s.preview)}', '${escapeHtml(s.path)}')">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                    <polyline points="14 2 14 8 20 8"></polyline>
+                                </svg>
+                                ${escapeHtml(s.filename)}
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+            
+            contentDiv.insertAdjacentHTML('beforeend', sourcesHtml);
+            
+            // Scroll to show sources
+            const container = document.getElementById('chatContainer');
+            container.scrollTop = container.scrollHeight;
         }
 
         function removeMessage(messageId) {

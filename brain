@@ -78,9 +78,9 @@ echo -e "${BLUE}Thinking...${NC}"
 first_chunk=true
 
 # Stream the response using curl
-# SSE format sends "data: <content>" lines, we extract just the content
+# SSE format sends "data: <json>" lines, we parse the JSON to get content with whitespace
 curl -sN "${JBRAIN_URL}?q=${encoded_question}" 2>/dev/null | while IFS= read -r line; do
-    # SSE sends lines in format: "data:content" or just content
+    # SSE sends lines in format: "data:{json}" or just content
     # Skip empty lines and event markers
     if [[ -z "$line" ]] || [[ "$line" == "event:"* ]] || [[ "$line" == "id:"* ]]; then
         continue
@@ -88,7 +88,9 @@ curl -sN "${JBRAIN_URL}?q=${encoded_question}" 2>/dev/null | while IFS= read -r 
     
     # Extract content after "data:" prefix if present
     if [[ "$line" == "data:"* ]]; then
-        content="${line#data:}"
+        json_data="${line#data:}"
+        # Parse JSON to extract content field (preserves whitespace)
+        content=$(echo "$json_data" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('content', ''), end='')" 2>/dev/null || echo -n "$json_data")
     else
         content="$line"
     fi

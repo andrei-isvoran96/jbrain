@@ -6,7 +6,7 @@ A Spring Boot application that indexes your local Markdown and Text files into a
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.2-brightgreen)
 ![Spring AI](https://img.shields.io/badge/Spring%20AI-2.0.0--M1-blue)
 
-![Presentation.gif](Presentation.gif)
+![Demo.gif](Demo.gif)
 
 ![cli.gif](cli.gif)
 
